@@ -180,15 +180,18 @@ h3 {
 }
 
 .slip-body-italic {
-  font-style: italic;
+/*  font-style: italic; */
+  font-style: normal;
 }
 
 .slip-body-is-italic > :not(.env-line) {
-  font-style: italic;
+/*  font-style: italic; */
+  font-style: normal;
 }
 
 .slip-body-is-italic ol.slippy-enumerate > li::marker {
-  font-style: italic;
+/*  font-style: italic; */
+  font-style: normal;
 }
 
 .proof-block {
