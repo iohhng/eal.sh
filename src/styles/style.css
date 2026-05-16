@@ -1,6 +1,38 @@
+@font-face {
+  font-family: "Bundled Georgia";
+  src: url("/fonts/georgia.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bundled Georgia";
+  src: url("/fonts/georgiai.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bundled Georgia";
+  src: url("/fonts/georgiab.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bundled Georgia";
+  src: url("/fonts/georgiaz.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
-  --font-serif: Georgia, "Times New Roman", serif;
-  --font-sans: Georgia, "Times New Roman", serif;
+  --font-serif: "Bundled Georgia", Georgia, "Times New Roman", serif;
+  --font-sans: "Bundled Georgia", Georgia, "Times New Roman", serif;
   --accent: #6f9690;
   --link: #006622;
   --link-hover: #004d18;
