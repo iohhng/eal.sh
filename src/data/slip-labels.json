@@ -9,6 +9,7 @@
     "lem:schur": "0007",
     "prop:simple-module-equivalent-conditions": "0008",
     "thm:module-correspondence": "0009",
-    "thm:module-first-isomorphism": "000A"
+    "thm:module-first-isomorphism": "000A",
+    "lem:module-schur": "000B"
   }
 }
