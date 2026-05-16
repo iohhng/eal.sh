@@ -36,8 +36,10 @@ export interface Slip {
   namespace: SlipNamespace;
   handle: string;
   kind: SlipKind;
-  title: string;
+  label: string;
+  title?: string;
   aliases: string[];
+  declaredDependsOn: string[];
   declaredGeneralizes: string[];
   declaredExampleOf: string[];
   url: string;

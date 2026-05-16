@@ -11,7 +11,7 @@ import rehypeStringify from "rehype-stringify";
 import { remarkSlippyDirectives } from "./directives";
 import type { Slip, KnowledgeBase } from "./model";
 import { isResultKind } from "./model";
-import { kindLabel, remarkSlippyReferences } from "./references";
+import { remarkSlippyReferences, slipReferenceDisplay } from "./references";
 import { remarkTypstBlocks } from "./typst";
 import { escapeHtml } from "./util";
 
@@ -62,8 +62,13 @@ export async function renderSlip(slip: Slip, kb: KnowledgeBase): Promise<string>
 }
 
 function slipHeaderNodes(slip: Slip): HtmlNode[] {
+  const reference = slipReferenceDisplay(slip);
+  if (!slip.title) {
+    return [spanNode(["env-heading", "slip-heading"], `${reference}.`)];
+  }
+
   return [
-    spanNode(["env-heading", "slip-heading"], kindLabel(slip.kind)),
+    spanNode(["env-heading", "slip-heading"], reference),
     textNode(" "),
     spanNode(["env-title"], `(${slip.title}).`),
   ];

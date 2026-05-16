@@ -5,8 +5,9 @@ import { z } from "astro/zod";
 const slips = defineCollection({
   loader: glob({ pattern: "**/*.md", base: "./src/content/slips" }),
   schema: z.object({
-    title: z.string().min(1),
+    title: z.string().min(1).optional(),
     aliases: z.array(z.string()).default([]),
+    depends_on: z.array(z.string()).default([]),
     generalizes: z.array(z.string()).default([]),
     example_of: z.array(z.string()).default([]),
   }),

@@ -1,12 +1,14 @@
 import { scanProofBlocks } from "./directives";
 import { diagnostic, failOnErrors } from "./diagnostics";
+import { assignSlipLabels } from "./labels";
 import { loadSlips } from "./load";
 import type { Slip, GraphData, GraphEdge, GraphNode, KnowledgeBase, Reference } from "./model";
 import { isResultKind } from "./model";
-import { slipDisplay, parseReferences, resolveReference } from "./references";
+import { slipGraphLabel, parseReferences, resolveReference } from "./references";
 
 export async function buildKnowledgeBase(): Promise<KnowledgeBase> {
   const slips = await loadSlips();
+  await assignSlipLabels(slips);
   const kb: KnowledgeBase = {
     slips,
     references: [],
@@ -20,6 +22,7 @@ export async function buildKnowledgeBase(): Promise<KnowledgeBase> {
   buildLookup(kb);
   collectReferences(kb);
   connectReferences(kb);
+  connectDeclaredDependencies(kb);
   connectSemanticRelations(kb);
   kb.graph = buildGraph(kb);
 
@@ -107,12 +110,6 @@ function collectReferences(kb: KnowledgeBase): void {
       ...parseReferences(slip.proof ?? "").map((parsed) => resolveReference(kb, parsed, slip.key)),
     ];
 
-    for (const ref of refs) {
-      if (!ref.resolved) {
-        kb.diagnostics.push(diagnostic("error", `unresolved reference ${ref.raw}`, slip.key));
-      }
-    }
-
     slip.outgoingRefs.push(...refs);
     kb.references.push(...refs);
   }
@@ -131,6 +128,23 @@ function connectReferences(kb: KnowledgeBase): void {
     pushUnique(source.dependsOn, target.key);
     pushUnique(target.usedBy, source.key);
     target.incomingRefs.push(ref);
+  }
+}
+
+function connectDeclaredDependencies(kb: KnowledgeBase): void {
+  const slips = new Map(kb.slips.map((slip) => [slip.key, slip]));
+
+  for (const slip of kb.slips) {
+    for (const raw of slip.declaredDependsOn) {
+      const targetKey = kb.lookup[raw];
+      if (!targetKey || targetKey === slip.key) continue;
+
+      const target = slips.get(targetKey);
+      if (!target) continue;
+
+      pushUnique(slip.dependsOn, target.key);
+      pushUnique(target.usedBy, slip.key);
+    }
   }
 }
 
@@ -192,7 +206,7 @@ function buildGraph(kb: KnowledgeBase): GraphData {
 }
 
 function graphLabel(slip: Slip): string {
-  return slipDisplay(slip);
+  return slipGraphLabel(slip);
 }
 
 function uniqueEdges(edges: GraphEdge[]): GraphEdge[] {

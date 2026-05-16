@@ -1,0 +1,14 @@
+{
+  "labels": {
+    "def:cyclic-module": "0001",
+    "def:left-ideal": "0002",
+    "def:module": "0003",
+    "def:module-homomorphism": "0004",
+    "def:right-module": "0005",
+    "def:simple-module": "0006",
+    "lem:schur": "0007",
+    "prop:simple-module-equivalent-conditions": "0008",
+    "thm:module-correspondence": "0009",
+    "thm:module-first-isomorphism": "000A"
+  }
+}

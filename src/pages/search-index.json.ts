@@ -1,11 +1,13 @@
 import { getKnowledgeBase } from "../lib/slippy/kb";
-import { slipDisplay } from "../lib/slippy/references";
+import { slipDisplay, slipReferenceDisplay } from "../lib/slippy/references";
 
 interface SearchEntry {
   key: string;
   kind: string;
+  label: string;
   title?: string;
   display: string;
+  reference: string;
   handle: string;
   aliases: string[];
   url: string;
@@ -17,13 +19,18 @@ export async function GET() {
   const entries: SearchEntry[] = kb.slips.map((slip) => ({
     key: slip.key,
     kind: slip.kind,
+    label: slip.label,
     title: slip.title,
     display: slipDisplay(slip),
+    reference: slipReferenceDisplay(slip),
     handle: slip.handle,
     aliases: slip.aliases,
     url: slip.url,
     search_text: searchText([
       slip.key,
+      slip.label,
+      slipReferenceDisplay(slip),
+      slipDisplay(slip),
       slip.handle,
       ...slip.aliases,
       slip.title,

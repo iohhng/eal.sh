@@ -28,11 +28,12 @@ export function parseReferences(markdown: string): ParsedReference[] {
   visit(tree as never, "link", (node: MarkdownNode) => {
     if (!node.url || !isSlipTarget(node.url)) return;
     const text = plainText(node);
+    const customText = text.trim();
 
     refs.push({
       raw: `[${text}](${node.url})`,
       target: node.url,
-      customText: text || undefined,
+      customText: customText || undefined,
     });
   });
 
@@ -43,13 +44,20 @@ export function remarkSlippyReferences(kb: KnowledgeBase) {
   const slips = new Map(kb.slips.map((slip) => [slip.key, slip]));
 
   return (tree: MarkdownNode) => {
-    visit(tree as never, "link", (node: MarkdownNode) => {
+    visit(tree as never, "link", (node: MarkdownNode, index, parent: MarkdownNode | undefined) => {
       if (!node.url || !isSlipTarget(node.url)) return;
 
       const target = slips.get(kb.lookup[node.url] ?? "");
-      if (!target) return;
+      const customText = plainText(node).trim();
+      if (!target) {
+        replaceNode(parent, index, textNode(missingReferenceDisplay(node.url, customText)));
+        return;
+      }
 
       node.url = target.url;
+      if (!customText) {
+        node.children = [textNode(slipReferenceDisplay(target))];
+      }
       node.data = {
         ...(node.data ?? {}),
         hProperties: {
@@ -78,7 +86,20 @@ export function slipByKey(kb: KnowledgeBase, key: string): Slip | undefined {
 }
 
 export function slipDisplay(slip: Slip): string {
-  return slip.title;
+  return slipSearchDisplay(slip);
+}
+
+export function slipReferenceDisplay(slip: Slip): string {
+  return slip.label ? `${kindLabel(slip.kind)} ${slip.label}` : `[${slip.handle}]`;
+}
+
+export function slipSearchDisplay(slip: Slip): string {
+  const reference = slipReferenceDisplay(slip);
+  return slip.title ? `${reference} (${slip.title})` : `${reference} [${slip.handle}]`;
+}
+
+export function slipGraphLabel(slip: Slip): string {
+  return slip.title || slipReferenceDisplay(slip);
 }
 
 export function kindLabel(kind: string): string {
@@ -90,9 +111,27 @@ function isSlipTarget(url: string): boolean {
   return SLIP_NAMESPACES.includes(namespace as SlipNamespace);
 }
 
+function missingReferenceDisplay(target: string, customText?: string): string {
+  return customText || `[${targetHandle(target)}]`;
+}
+
+function targetHandle(target: string): string {
+  const [, handle = target] = target.split(":", 2);
+  return handle;
+}
+
 function plainText(node: MarkdownNode): string {
   if (typeof node.value === "string") return node.value;
   return (node.children ?? []).map(plainText).join("");
+}
+
+function textNode(value: string): MarkdownNode {
+  return { type: "text", value };
+}
+
+function replaceNode(parent: MarkdownNode | undefined, index: unknown, node: MarkdownNode): void {
+  if (!parent?.children || typeof index !== "number") return;
+  parent.children[index] = node;
 }
 
 function classNames(existing: unknown, added: string): string[] {
