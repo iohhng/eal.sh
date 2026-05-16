@@ -1,0 +1,63 @@
+.slippy-graph {
+  --graph-current: #284b63;
+  --graph-definition: #9a9a9a;
+  --graph-result: #6f9690;
+  --graph-example: #b6aaa0;
+  --graph-edge: #b8b8b8;
+  --graph-label: #111111;
+  --graph-font: Georgia, "Times New Roman", serif;
+  --graph-edge-alpha: 0.28;
+  --graph-edge-active-alpha: 0.72;
+  --graph-edge-muted-alpha: 0.14;
+  --graph-node-muted-alpha: 0.2;
+  --graph-label-muted-alpha: 0.12;
+}
+
+.slippy-graph {
+  --graph-ink: #111;
+  --graph-muted: #888;
+  position: relative;
+  width: 100%;
+  margin: 18px 0;
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--graph-ink);
+}
+
+.slippy-graph.is-loading,
+.slippy-graph.is-error {
+  min-height: 250px;
+  display: grid;
+  place-items: center;
+  color: var(--graph-muted);
+  font-size: 13px;
+}
+
+.slippy-graph-viewport {
+  position: relative;
+  height: var(--slippy-graph-height, 260px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.slippy-graph[data-mode="global"] .slippy-graph-viewport {
+  height: var(--slippy-graph-height, 420px);
+}
+
+.slippy-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.slippy-graph-canvas:active {
+  cursor: grabbing;
+}
+
+@media (max-width: 620px) {
+  .slippy-graph-viewport {
+    height: var(--slippy-graph-height, 230px);
+  }
+}

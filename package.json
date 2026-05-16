@@ -1,0 +1,43 @@
+{
+  "name": "eal.sh",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "dev:fresh": "npm run clean:astro && astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "check": "astro check",
+    "clean:astro": "node -e \"require('node:fs').rmSync('.astro', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@myriaddreamin/typst-ts-node-compiler": "^0.7.0-rc2",
+    "@tweenjs/tween.js": "^25.0.0",
+    "astro": "^6.2.2",
+    "d3": "^7.9.0",
+    "fuse.js": "^7.3.0",
+    "pixi.js": "^8.18.1",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-mathjax": "^7.1.0",
+    "rehype-parse": "^9.0.1",
+    "rehype-slug": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-directive": "^4.0.0",
+    "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@types/d3": "^7.4.3",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
+  }
+}

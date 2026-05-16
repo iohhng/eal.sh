@@ -1,0 +1,162 @@
+<div class="slippy-search" data-search-src="/search-index.json"></div>
+
+<script>
+  // @ts-nocheck
+  import Fuse from "fuse.js";
+
+  const searchCache = new Map();
+
+  const fuseOptions = {
+    includeScore: true,
+    ignoreLocation: true,
+    threshold: 0.22,
+    minMatchCharLength: 1,
+    keys: [
+      { name: "title", weight: 0.34 },
+      { name: "display", weight: 0.26 },
+      { name: "handle", weight: 0.18 },
+      { name: "key", weight: 0.14 },
+      { name: "search_text", weight: 0.08 },
+    ],
+  };
+
+  ready(() => {
+    document.querySelectorAll(".slippy-search").forEach((element) => {
+      void mountSearch(element);
+    });
+  });
+
+  function ready(callback) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", callback, { once: true });
+    } else {
+      callback();
+    }
+  }
+
+  async function loadSearch(url) {
+    if (!searchCache.has(url)) {
+      searchCache.set(
+        url,
+        fetch(url)
+          .then((response) => {
+            if (!response.ok) throw new Error(`failed to load ${url}`);
+            return response.json();
+          })
+          .then((payload) => {
+            const entries = Array.isArray(payload.entries) ? payload.entries : [];
+            return { entries, fuse: new Fuse(entries, fuseOptions) };
+          }),
+      );
+    }
+    return searchCache.get(url);
+  }
+
+  async function mountSearch(root) {
+    if (root.dataset.slippySearchMounted === "true") return;
+    root.dataset.slippySearchMounted = "true";
+
+    const limit = number(root.dataset.limit, 8);
+    const input = document.createElement("input");
+    input.className = "slippy-search-input";
+    input.type = "text";
+    input.setAttribute("role", "searchbox");
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.placeholder = root.dataset.placeholder || "Search";
+    input.setAttribute("aria-label", root.dataset.label || "Search");
+
+    const results = document.createElement("div");
+    results.className = "slippy-search-results";
+    results.hidden = true;
+
+    root.replaceChildren(input, results);
+
+    let index = null;
+    let active = -1;
+    let currentResults = [];
+
+    function closeResults() {
+      active = -1;
+      results.hidden = true;
+      for (const child of results.children) child.classList.remove("is-active");
+    }
+
+    try {
+      index = await loadSearch(root.dataset.searchSrc || "/search-index.json");
+    } catch {
+      root.classList.add("is-error");
+      input.placeholder = "Search unavailable";
+      input.disabled = true;
+      return;
+    }
+
+    input.addEventListener("input", () => {
+      active = -1;
+      currentResults = search(index, input.value, limit);
+      renderResults(results, currentResults, active);
+    });
+
+    input.addEventListener("focus", () => {
+      if (input.value.trim() !== "") renderResults(results, currentResults, active);
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeResults();
+        return;
+      }
+      if (results.hidden || currentResults.length === 0) return;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        active = (active + 1) % currentResults.length;
+        renderResults(results, currentResults, active);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        active = (active - 1 + currentResults.length) % currentResults.length;
+        renderResults(results, currentResults, active);
+      } else if (event.key === "Enter") {
+        const item = currentResults[Math.max(active, 0)];
+        if (item) window.location.href = item.url;
+      }
+    });
+
+    document.addEventListener("pointerdown", (event) => {
+      if (!root.contains(event.target)) closeResults();
+    });
+  }
+
+  function search(index, query, limit) {
+    const trimmed = query.trim();
+    if (trimmed === "") return [];
+    return index.fuse.search(trimmed, { limit }).map((result) => result.item);
+  }
+
+  function renderResults(container, entries, active) {
+    container.replaceChildren();
+    if (entries.length === 0) {
+      container.hidden = true;
+      return;
+    }
+
+    for (const [index, entry] of entries.entries()) {
+      const link = document.createElement("a");
+      link.className = "slippy-search-result";
+      if (index === active) link.classList.add("is-active");
+      link.href = entry.url;
+
+      const title = document.createElement("span");
+      title.className = "slippy-search-title";
+      title.textContent = entry.display || entry.title || entry.key;
+      link.append(title);
+      container.append(link);
+    }
+    container.hidden = false;
+  }
+
+  function number(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+</script>

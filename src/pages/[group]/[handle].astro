@@ -1,0 +1,79 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Graph from "../../components/Graph.astro";
+import { getKnowledgeBase } from "../../lib/slippy/kb";
+import { renderSlip } from "../../lib/slippy/render";
+import { slipByKey } from "../../lib/slippy/references";
+import type { Slip } from "../../lib/slippy/model";
+
+export async function getStaticPaths() {
+  const kb = await getKnowledgeBase();
+  return kb.slips.map((slip) => {
+    const [group, handle] = slip.url.replace(/^\//u, "").split("/");
+    return {
+      params: { group, handle },
+      props: { slipKey: slip.key },
+    };
+  });
+}
+
+const kb = await getKnowledgeBase();
+const { slipKey } = Astro.props as { slipKey: string };
+const slip = slipByKey(kb, slipKey);
+if (!slip) throw new Error(`missing slip ${slipKey}`);
+
+const html = await renderSlip(slip, kb);
+const relationRows = [
+  { label: "Generalizes", items: slipsFor(slip.generalizes) },
+  { label: "Special case of", items: slipsFor(slip.generalizedBy) },
+  { label: "Example of", items: slipsFor(slip.exampleOf) },
+  { label: "Examples", items: slipsFor(slip.examples) },
+].filter((row) => row.items.length > 0);
+const title = slip.title;
+
+function slipsFor(keys: string[]): Slip[] {
+  const items: Slip[] = [];
+  for (const key of keys) {
+    const item = slipByKey(kb, key);
+    if (item) items.push(item);
+  }
+  return items;
+}
+---
+
+<BaseLayout title={title}>
+  <main class="page-wrapper">
+    <Header />
+    <section class="content content-body">
+      <div set:html={html} />
+      <Graph
+        graph={kb.graph}
+        root={slip.key}
+        mode="local"
+        traverse={["dependency"]}
+        renderEdges={["dependency"]}
+        depth={1}
+        height={280}
+      />
+      {relationRows.length ? (
+        <div class="relations">
+          {relationRows.map((row) => (
+            <p>
+              <span class="relation-label">{row.label}:</span>{" "}
+              <span>
+                {row.items.map((item, index) => (
+                  <>
+                    {index > 0 ? ", " : ""}
+                    <a href={item.url}>{item.title}</a>
+                  </>
+                ))}
+                .
+              </span>
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  </main>
+</BaseLayout>

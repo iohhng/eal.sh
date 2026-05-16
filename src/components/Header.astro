@@ -1,0 +1,22 @@
+---
+import Search from "./Search.astro";
+
+interface Props {
+  home?: boolean;
+  backHref?: string;
+  backLabel?: string;
+}
+
+const { home = false, backHref = "/", backLabel = "Home" } = Astro.props;
+---
+
+<header class="site-header">
+  {
+    home ? (
+      <span class="site-mark site-mark-home">eal.sh</span>
+    ) : (
+      <a class="site-mark" href={backHref}>← {backLabel}</a>
+    )
+  }
+  <Search />
+</header>

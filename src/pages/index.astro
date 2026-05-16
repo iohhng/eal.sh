@@ -1,0 +1,17 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Graph from "../components/Graph.astro";
+import { getKnowledgeBase } from "../lib/slippy/kb";
+
+const kb = await getKnowledgeBase();
+---
+
+<BaseLayout title="eal.sh">
+  <main class="page-wrapper">
+    <Header home />
+    <section class="content">
+      <Graph graph={kb.graph} mode="global" height={420} />
+    </section>
+  </main>
+</BaseLayout>

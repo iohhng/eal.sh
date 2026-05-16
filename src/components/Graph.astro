@@ -1,0 +1,637 @@
+---
+import type { EdgeKind, GraphData } from "../lib/slippy/model";
+import { projectGraph } from "../lib/slippy/graph";
+
+interface Props {
+  graph: GraphData;
+  root?: string;
+  mode?: "global" | "local";
+  traverse?: EdgeKind[];
+  renderEdges?: EdgeKind[];
+  depth?: number;
+  height?: number;
+}
+
+const projected = projectGraph(Astro.props.graph, Astro.props);
+const graphData = {
+  nodes: projected.nodes.map((node) => ({
+    id: node.id,
+    title: node.label,
+    text: node.label,
+    url: node.url,
+    type: node.nodeType,
+    kind: node.kind,
+    current: node.current,
+  })),
+  edges: projected.edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+    type: edge.kind,
+  })),
+};
+const height = Astro.props.height ?? 300;
+---
+
+<div
+  class="slippy-graph"
+  style={`--slippy-graph-height: ${height}px`}
+  data-current={Astro.props.root ?? ""}
+  data-mode={Astro.props.mode ?? "global"}
+  data-graph={JSON.stringify(graphData)}
+></div>
+
+<script>
+  // @ts-nocheck
+  import {
+    drag,
+    forceCenter,
+    forceCollide,
+    forceLink,
+    forceManyBody,
+    forceRadial,
+    forceSimulation,
+    select,
+    zoom,
+    zoomIdentity,
+  } from "d3";
+  import { Application, Circle, Container, Graphics, HTMLText } from "pixi.js";
+  import { Group as TweenGroup, Tween as Tweened } from "@tweenjs/tween.js";
+
+  const defaultOptions = {
+    local: {
+      scale: 1.1,
+      repelForce: 0.5,
+      centerForce: 0.3,
+      linkDistance: 30,
+      fontSize: 0.55,
+      opacityScale: 1,
+      enableRadial: false,
+      fitPadding: 28,
+      fitTicks: 80,
+      renderResolution: 2,
+      textResolution: 4,
+    },
+    global: {
+      scale: 0.9,
+      repelForce: 0.5,
+      centerForce: 0.2,
+      linkDistance: 30,
+      fontSize: 0.55,
+      opacityScale: 1,
+      enableRadial: true,
+      fitPadding: 28,
+      fitTicks: 120,
+      renderResolution: 2,
+      textResolution: 4,
+    },
+  };
+
+  const graphThemeFallbacks = {
+    "--graph-current": "#284b63",
+    "--graph-definition": "#9a9a9a",
+    "--graph-result": "#6f9690",
+    "--graph-example": "#b6aaa0",
+    "--graph-edge": "#b8b8b8",
+    "--graph-label": "#111111",
+    "--graph-font": 'Georgia, "Times New Roman", serif',
+    "--graph-edge-alpha": "0.28",
+    "--graph-edge-active-alpha": "0.72",
+    "--graph-edge-muted-alpha": "0.14",
+    "--graph-node-muted-alpha": "0.2",
+    "--graph-label-muted-alpha": "0.12",
+  };
+
+  function initGraphs() {
+    for (const root of document.querySelectorAll(".slippy-graph:not([data-slippy-graph-mounted])")) {
+      root.dataset.slippyGraphMounted = "true";
+      root.textContent = "";
+      root.classList.add("is-loading");
+      try {
+        const data = JSON.parse(root.getAttribute("data-graph") || '{"nodes":[],"edges":[]}');
+        new GraphView(root, normalizeGraph(data)).init();
+      } catch (error) {
+        root.classList.remove("is-loading");
+        root.classList.add("is-error");
+        root.textContent = "Graph unavailable.";
+        console.warn(error);
+      }
+    }
+  }
+
+  function normalizeGraph(graph) {
+    const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+    const edges = Array.isArray(graph.edges) ? graph.edges : [];
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    return {
+      nodes,
+      edges: edges.filter((edge) => byId.has(edge.source) && byId.has(edge.target)),
+      byId,
+    };
+  }
+
+  class GraphView {
+    constructor(root, graph) {
+      this.root = root;
+      this.graph = graph;
+      this.mode = root.dataset.mode || "global";
+      this.current = root.dataset.current || "";
+      this.options = graphOptions(root, this.mode);
+      this.width = 1;
+      this.height = 1;
+      this.currentTransform = zoomIdentity;
+      this.labelZoomOpacity = 0;
+      this.hoveredNodeId = null;
+      this.hoveredNeighbours = new Set();
+      this.dragging = false;
+      this.dragStartTime = 0;
+      this.resizeAnimationFrame = null;
+      this.tweens = new Map();
+    }
+
+    async init() {
+      this.root.classList.remove("is-loading");
+      this.root.classList.add("slippy-graph-ready");
+      this.viewport = document.createElement("div");
+      this.viewport.className = "slippy-graph-viewport";
+      this.root.append(this.viewport);
+
+      const size = this.measureViewport();
+      this.width = size.width;
+      this.height = size.height;
+
+      this.prepareData();
+      await this.createRenderer();
+      this.createSimulation();
+      this.simulation.tick(this.options.fitTicks);
+      this.createDisplayObjects();
+      this.bindInteraction();
+      this.observeResize();
+      this.fitViewportToGraph();
+      this.renderPixiFromD3();
+      requestAnimationFrame((time) => this.animate(time));
+    }
+
+    measureViewport() {
+      const rect = this.viewport.getBoundingClientRect();
+      return {
+        width: Math.max(1, Math.round(rect.width || this.viewport.offsetWidth || 1)),
+        height: Math.max(250, Math.round(rect.height || this.viewport.offsetHeight || 250)),
+      };
+    }
+
+    prepareData() {
+      const edges = dedupeEdges(this.graph.edges.map((edge) => ({ ...edge, type: edge.type || "dependency" })));
+      const degree = new Map();
+      for (const edge of edges) {
+        degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
+        degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
+      }
+
+      this.nodes = this.graph.nodes.map((node) => ({
+        ...node,
+        text: labelFor(node),
+        degree: degree.get(node.id) || 0,
+      }));
+      this.nodeById = new Map(this.nodes.map((node) => [node.id, node]));
+      this.links = edges
+        .filter((edge) => this.nodeById.has(edge.source) && this.nodeById.has(edge.target))
+        .map((edge) => ({
+          ...edge,
+          source: this.nodeById.get(edge.source),
+          target: this.nodeById.get(edge.target),
+        }));
+    }
+
+    async createRenderer() {
+      this.app = new Application();
+      await initPixi(this.app, {
+        width: this.width,
+        height: this.height,
+        antialias: true,
+        autoStart: false,
+        autoDensity: true,
+        backgroundAlpha: 0,
+        resolution: this.options.renderResolution,
+      });
+      this.app.canvas.className = "slippy-graph-canvas";
+      this.viewport.append(this.app.canvas);
+
+      this.computedStyleMap = graphStyleMap(this.root);
+      this.stage = this.app.stage;
+      this.stage.sortableChildren = true;
+
+      this.linksContainer = new Container({ zIndex: 1, isRenderGroup: true });
+      this.nodesContainer = new Container({ zIndex: 2, isRenderGroup: true });
+      this.labelsContainer = new Container({ zIndex: 3, isRenderGroup: true });
+      this.stage.addChild(this.linksContainer, this.nodesContainer, this.labelsContainer);
+    }
+
+    createSimulation() {
+      this.simulation = forceSimulation(this.nodes)
+        .force("charge", forceManyBody().strength(-100 * this.options.repelForce))
+        .force("center", forceCenter().strength(this.options.centerForce))
+        .force("link", forceLink(this.links).distance(this.options.linkDistance))
+        .force("collide", forceCollide((node) => nodeRadius(node)).iterations(3));
+
+      if (this.options.enableRadial) {
+        const radius = (Math.min(this.width, this.height) / 2) * 0.8;
+        this.simulation.force("radial", forceRadial(radius).strength(0.2));
+      }
+    }
+
+    createDisplayObjects() {
+      this.linkRenderData = [];
+      this.nodeRenderData = [];
+
+      for (const node of this.nodes) {
+        const radius = nodeRadius(node);
+        const label = new HTMLText({
+          interactive: false,
+          eventMode: "none",
+          text: escapeHtml(node.text),
+          alpha: 0,
+          anchor: { x: 0.5, y: 1.2 },
+          style: {
+            fontSize: this.options.fontSize * 15,
+            fill: this.computedStyleMap["--graph-label"],
+            fontFamily: this.computedStyleMap["--graph-font"],
+            cssOverrides: 'font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1, "onum" 0;',
+          },
+          resolution: this.options.textResolution,
+        });
+        label.scale.set(1 / this.options.scale);
+
+        const gfx = new Graphics({
+          interactive: true,
+          eventMode: "static",
+          hitArea: new Circle(0, 0, radius + 4),
+          cursor: "pointer",
+        })
+          .circle(0, 0, radius)
+          .fill({ color: this.color(node) })
+          .on("pointerover", () => {
+            this.updateHoverInfo(node.id);
+            if (!this.dragging) this.renderPixiFromD3();
+          })
+          .on("pointerleave", () => {
+            this.updateHoverInfo(null);
+            if (!this.dragging) this.renderPixiFromD3();
+          });
+        gfx.label = node.id;
+
+        this.nodesContainer.addChild(gfx);
+        this.labelsContainer.addChild(label);
+        this.nodeRenderData.push({ simulationData: node, gfx, label, alpha: 1, active: false });
+      }
+
+      for (const link of this.links) {
+        const gfx = new Graphics({ interactive: false, eventMode: "none" });
+        this.linksContainer.addChild(gfx);
+        this.linkRenderData.push({
+          simulationData: link,
+          gfx,
+          alpha: this.edgeAlpha("idle"),
+          active: false,
+        });
+      }
+    }
+
+    bindInteraction() {
+      const canvasSelection = select(this.app.canvas);
+      this.canvasSelection = canvasSelection;
+
+      canvasSelection.call(
+        drag()
+          .container(() => this.app.canvas)
+          .subject(() => this.nodes.find((node) => node.id === this.hoveredNodeId))
+          .on("start", (event) => {
+            if (!event.subject) return;
+            if (!event.active) this.simulation.alphaTarget(1).restart();
+            event.subject.fx = event.subject.x;
+            event.subject.fy = event.subject.y;
+            this.dragStartTime = Date.now();
+            this.dragging = true;
+          })
+          .on("drag", (event) => {
+            if (!event.subject) return;
+            event.subject.fx += event.dx / this.currentTransform.k;
+            event.subject.fy += event.dy / this.currentTransform.k;
+          })
+          .on("end", (event) => {
+            if (!event.subject) return;
+            if (!event.active) this.simulation.alphaTarget(0);
+            event.subject.fx = null;
+            event.subject.fy = null;
+            this.dragging = false;
+            if (Date.now() - this.dragStartTime < 260 && event.subject.url) {
+              window.location.href = event.subject.url;
+            }
+          }),
+      );
+
+      this.zoomBehavior = zoom()
+        .extent(this.zoomExtent())
+        .scaleExtent([0.05, 4])
+        .on("zoom", ({ transform }) => this.setViewportTransform(transform));
+      canvasSelection.call(this.zoomBehavior);
+    }
+
+    zoomExtent() {
+      return [
+        [0, 0],
+        [this.width, this.height],
+      ];
+    }
+
+    observeResize() {
+      if ("ResizeObserver" in window) {
+        this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
+        this.resizeObserver.observe(this.viewport);
+      } else {
+        window.addEventListener("resize", () => this.scheduleResize());
+      }
+    }
+
+    scheduleResize() {
+      if (this.resizeAnimationFrame !== null) return;
+      this.resizeAnimationFrame = requestAnimationFrame(() => {
+        this.resizeAnimationFrame = null;
+        this.resizeToViewport();
+      });
+    }
+
+    resizeToViewport() {
+      const size = this.measureViewport();
+      if (Math.abs(size.width - this.width) < 1 && Math.abs(size.height - this.height) < 1) return;
+      this.width = size.width;
+      this.height = size.height;
+      this.app.renderer?.resize?.(this.width, this.height);
+      this.zoomBehavior?.extent(this.zoomExtent());
+      this.fitViewportToGraph();
+      this.renderPixiFromD3();
+    }
+
+    setViewportTransform(transform) {
+      this.currentTransform = transform;
+      this.stage.scale.set(transform.k, transform.k);
+      this.stage.position.set(transform.x, transform.y);
+
+      const scale = transform.k * this.options.opacityScale;
+      this.labelZoomOpacity = Math.max((scale - 1) / 3.75, 0);
+      for (const label of this.labelsContainer.children) label.alpha = this.labelZoomOpacity;
+    }
+
+    applyViewportTransform(transform) {
+      this.canvasSelection.call(this.zoomBehavior.transform, transform);
+    }
+
+    fitViewportToGraph() {
+      if (this.nodes.length === 0) return;
+      const bounds = graphBounds(this.nodes, this.width, this.height);
+      if (!bounds) return;
+
+      const padding = Math.max(0, Math.min(this.options.fitPadding, this.width / 3, this.height / 3));
+      const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+      const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+      const availableWidth = Math.max(1, this.width - padding * 2);
+      const availableHeight = Math.max(1, this.height - padding * 2);
+      const fitScale = Math.min(availableWidth / contentWidth, availableHeight / contentHeight, 1);
+      const scale = Math.max(0.05, fitScale);
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerY = (bounds.minY + bounds.maxY) / 2;
+      this.applyViewportTransform(zoomIdentity.translate(this.width / 2 - centerX * scale, this.height / 2 - centerY * scale).scale(scale));
+    }
+
+    updateHoverInfo(newHoveredId) {
+      this.hoveredNodeId = newHoveredId;
+      if (newHoveredId === null) {
+        this.hoveredNeighbours = new Set();
+        for (const node of this.nodeRenderData) node.active = false;
+        for (const link of this.linkRenderData) link.active = false;
+        return;
+      }
+
+      this.hoveredNeighbours = new Set();
+      for (const link of this.linkRenderData) {
+        const edge = link.simulationData;
+        if (edge.source.id === newHoveredId || edge.target.id === newHoveredId) {
+          this.hoveredNeighbours.add(edge.source.id);
+          this.hoveredNeighbours.add(edge.target.id);
+        }
+        link.active = edge.source.id === newHoveredId || edge.target.id === newHoveredId;
+      }
+      for (const node of this.nodeRenderData) {
+        node.active = node.simulationData.id === newHoveredId || this.hoveredNeighbours.has(node.simulationData.id);
+      }
+    }
+
+    renderLinks() {
+      this.tweens.get("link")?.stop();
+      const tweenGroup = new TweenGroup();
+      for (const link of this.linkRenderData) {
+        let alpha = this.edgeAlpha("idle");
+        if (this.hoveredNodeId) alpha = link.active ? this.edgeAlpha("active") : this.edgeAlpha("muted");
+        tweenGroup.add(new Tweened(link).to({ alpha }, 200));
+      }
+      tweenGroup.getAll().forEach((tween) => tween.start());
+      this.tweens.set("link", { update: tweenGroup.update.bind(tweenGroup), stop: () => tweenGroup.getAll().forEach((tween) => tween.stop()) });
+    }
+
+    renderLabels() {
+      this.tweens.get("label")?.stop();
+      const tweenGroup = new TweenGroup();
+      const defaultScale = 1 / this.options.scale;
+      const activeScale = defaultScale * 1.1;
+      for (const node of this.nodeRenderData) {
+        const id = node.simulationData.id;
+        if (this.hoveredNodeId === id) {
+          tweenGroup.add(new Tweened(node.label).to({ alpha: 1, scale: { x: activeScale, y: activeScale } }, 100));
+        } else {
+          const alpha = this.hoveredNodeId === null
+            ? this.labelZoomOpacity
+            : node.active
+              ? this.labelZoomOpacity
+              : this.labelZoomOpacity * this.labelMutedAlpha();
+          tweenGroup.add(new Tweened(node.label).to({ alpha, scale: { x: defaultScale, y: defaultScale } }, 100));
+        }
+      }
+      tweenGroup.getAll().forEach((tween) => tween.start());
+      this.tweens.set("label", { update: tweenGroup.update.bind(tweenGroup), stop: () => tweenGroup.getAll().forEach((tween) => tween.stop()) });
+    }
+
+    renderNodes() {
+      this.tweens.get("hover")?.stop();
+      const tweenGroup = new TweenGroup();
+      for (const node of this.nodeRenderData) {
+        const alpha = this.hoveredNodeId !== null ? (node.active ? 1 : this.nodeMutedAlpha()) : 1;
+        tweenGroup.add(new Tweened(node.gfx).to({ alpha }, 200));
+      }
+      tweenGroup.getAll().forEach((tween) => tween.start());
+      this.tweens.set("hover", { update: tweenGroup.update.bind(tweenGroup), stop: () => tweenGroup.getAll().forEach((tween) => tween.stop()) });
+    }
+
+    renderPixiFromD3() {
+      this.renderNodes();
+      this.renderLinks();
+      this.renderLabels();
+    }
+
+    animate(time) {
+      for (const node of this.nodeRenderData) {
+        const { x, y } = node.simulationData;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        node.gfx.position.set(x + this.width / 2, y + this.height / 2);
+        node.label.position.set(x + this.width / 2, y + this.height / 2);
+      }
+
+      for (const link of this.linkRenderData) {
+        const edge = link.simulationData;
+        link.gfx.clear();
+        link.gfx.moveTo(edge.source.x + this.width / 2, edge.source.y + this.height / 2);
+        link.gfx.lineTo(edge.target.x + this.width / 2, edge.target.y + this.height / 2).stroke({
+          alpha: link.alpha,
+          width: 1,
+          color: this.computedStyleMap["--graph-edge"],
+        });
+      }
+
+      this.tweens.forEach((tween) => tween.update(time));
+      this.app.renderer.render(this.stage);
+      requestAnimationFrame((next) => this.animate(next));
+    }
+
+    color(node) {
+      if (node.current || node.id === this.current) return this.computedStyleMap["--graph-current"];
+      if (node.kind === "definition") return this.computedStyleMap["--graph-definition"];
+      if (node.kind === "example") return this.computedStyleMap["--graph-example"];
+      return this.computedStyleMap["--graph-result"];
+    }
+
+    edgeAlpha(state) {
+      if (state === "active") return number(this.computedStyleMap["--graph-edge-active-alpha"], 0.72);
+      if (state === "muted") return number(this.computedStyleMap["--graph-edge-muted-alpha"], 0.14);
+      return number(this.computedStyleMap["--graph-edge-alpha"], 0.28);
+    }
+
+    nodeMutedAlpha() {
+      return number(this.computedStyleMap["--graph-node-muted-alpha"], 0.2);
+    }
+
+    labelMutedAlpha() {
+      return number(this.computedStyleMap["--graph-label-muted-alpha"], 0.12);
+    }
+  }
+
+  async function initPixi(app, options) {
+    try {
+      await app.init({ ...options, preference: "webgpu" });
+    } catch {
+      await app.init(options);
+    }
+  }
+
+  function graphOptions(root, mode) {
+    const base = mode === "global" ? defaultOptions.global : defaultOptions.local;
+    return {
+      scale: number(root.dataset.scale, base.scale),
+      repelForce: number(root.dataset.repelForce || root.dataset.repel, base.repelForce),
+      centerForce: number(root.dataset.centerForce || root.dataset.center, base.centerForce),
+      linkDistance: number(root.dataset.linkDistance, base.linkDistance),
+      fontSize: number(root.dataset.fontSize, base.fontSize),
+      opacityScale: number(root.dataset.opacityScale, base.opacityScale),
+      enableRadial: root.dataset.radial === "true" || base.enableRadial,
+      fitPadding: number(root.dataset.fitPadding, base.fitPadding),
+      fitTicks: Math.max(0, Math.floor(number(root.dataset.fitTicks, base.fitTicks))),
+      renderResolution: graphRenderResolution(root.dataset.renderResolution, base.renderResolution),
+      textResolution: graphTextResolution(root.dataset.textResolution, base.textResolution),
+    };
+  }
+
+  function graphRenderResolution(value, fallback) {
+    const requested = number(value, fallback);
+    const device = number(window.devicePixelRatio, 1);
+    return Math.max(1, Math.min(requested, device, 2));
+  }
+
+  function graphTextResolution(value, fallback) {
+    const requested = number(value, fallback);
+    const device = number(window.devicePixelRatio, 1);
+    const narrowViewport = window.matchMedia?.("(max-width: 620px)")?.matches ?? false;
+    const cap = narrowViewport || device > 2.5 ? 2 : 4;
+    return Math.max(1, Math.min(requested, cap));
+  }
+
+  function graphStyleMap(root) {
+    const rootStyles = getComputedStyle(root);
+    const documentStyles = getComputedStyle(document.documentElement);
+    return Object.fromEntries(
+      Object.entries(graphThemeFallbacks).map(([key, fallback]) => {
+        const value = rootStyles.getPropertyValue(key).trim() || documentStyles.getPropertyValue(key).trim();
+        return [key, value || fallback];
+      }),
+    );
+  }
+
+  function nodeRadius(node) {
+    return 2 + Math.sqrt(node.degree || 0);
+  }
+
+  function graphBounds(nodes, width, height) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const node of nodes) {
+      if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
+      const radius = nodeRadius(node) + 4;
+      const x = node.x + width / 2;
+      const y = node.y + height / 2;
+      minX = Math.min(minX, x - radius);
+      maxX = Math.max(maxX, x + radius);
+      minY = Math.min(minY, y - radius);
+      maxY = Math.max(maxY, y + radius);
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+    return { minX, minY, maxX, maxY };
+  }
+
+  function labelFor(node) {
+    return node.text || node.title || node.id;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function dedupeEdges(edges) {
+    const seen = new Set();
+    const out = [];
+    for (const edge of edges) {
+      const key = `${edge.source}\u0000${edge.target}\u0000${edge.type}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(edge);
+      }
+    }
+    return out;
+  }
+
+  function number(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  document.addEventListener("astro:page-load", initGraphs);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initGraphs);
+  } else {
+    initGraphs();
+  }
+</script>
