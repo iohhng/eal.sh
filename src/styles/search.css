@@ -5,7 +5,7 @@
   flex: 0 0 170px;
   width: min(100%, 170px);
   height: var(--slippy-search-height);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-serif);
 }
 
 .slippy-search-input {

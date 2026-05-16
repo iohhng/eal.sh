@@ -5,7 +5,7 @@
   --graph-example: #b6aaa0;
   --graph-edge: #b8b8b8;
   --graph-label: #111111;
-  --graph-font: Georgia, "Times New Roman", serif;
+  --graph-font: var(--font-serif);
   --graph-edge-alpha: 0.28;
   --graph-edge-active-alpha: 0.72;
   --graph-edge-muted-alpha: 0.14;
@@ -19,7 +19,7 @@
   position: relative;
   width: 100%;
   margin: 18px 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-serif);
   color: var(--graph-ink);
 }
 

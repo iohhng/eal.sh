@@ -93,7 +93,7 @@ const height = Astro.props.height ?? 300;
     "--graph-example": "#b6aaa0",
     "--graph-edge": "#b8b8b8",
     "--graph-label": "#111111",
-    "--graph-font": 'Georgia, "Times New Roman", serif',
+    "--graph-font": 'var(--font-serif)',
     "--graph-edge-alpha": "0.28",
     "--graph-edge-active-alpha": "0.72",
     "--graph-edge-muted-alpha": "0.14",
@@ -566,10 +566,17 @@ const height = Astro.props.height ?? 300;
     const documentStyles = getComputedStyle(document.documentElement);
     return Object.fromEntries(
       Object.entries(graphThemeFallbacks).map(([key, fallback]) => {
-        const value = rootStyles.getPropertyValue(key).trim() || documentStyles.getPropertyValue(key).trim();
+        const value = cssVariableValue(rootStyles, documentStyles, key);
         return [key, value || fallback];
       }),
     );
+  }
+
+  function cssVariableValue(rootStyles, documentStyles, key) {
+    const value = rootStyles.getPropertyValue(key).trim() || documentStyles.getPropertyValue(key).trim();
+    const variable = value.match(/^var\((--[^),\s]+)\)$/);
+    if (!variable) return value;
+    return rootStyles.getPropertyValue(variable[1]).trim() || documentStyles.getPropertyValue(variable[1]).trim();
   }
 
   function nodeRadius(node) {
