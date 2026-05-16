@@ -10,6 +10,8 @@
     "prop:simple-module-equivalent-conditions": "0008",
     "thm:module-correspondence": "0009",
     "thm:module-first-isomorphism": "000A",
-    "lem:module-schur": "000B"
+    "lem:module-schur": "000B",
+    "lem:image-is-submodule": "000C",
+    "lem:kernel-is-submodule": "000D"
   }
 }
